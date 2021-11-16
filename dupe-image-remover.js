@@ -23,28 +23,34 @@ module.exports = function removeDuplicates(directory, options = {}) {
 	return findDuplicates(directory, options)
 	.then(duplicates => {
 		if (duplicates.length == 0) {
-			logger.ln();
-			logger.red('No duplicates to remove.');
+			if (options.logger) {
+				logger.ln();
+				logger.red('No duplicates to remove.');
+			}
 			return;
 		}
 		
 		var startTime = Date.now();
 		var imgHashCache = new FileCache(directory, 'imgcache');
 		
-		logger.ln();
-		logger.log('Determining duplicates to remove...');
-		logger.indent();
+		if (options.logger) {
+			logger.ln();
+			logger.log('Determining duplicates to remove...');
+			logger.indent();
+		}
 		
 		return duplicates.forEachAsync((group,idx) => {
-			logger.log(`Group ${idx+1} (${group.length} images)`);
-			logger.indent();
+			if (options.logger) {
+				logger.log(`Group ${idx+1} (${group.length} images)`);
+				logger.indent();
+			}
 			
 			var bestSizeFile = group[0];
 			var bestName = bestSizeFile.name;
 			
-			logger.log('Starting As:', bestName, Format.bytes(bestSizeFile._size));
+			if (options.logger) logger.log('Starting As:', bestName, Format.bytes(bestSizeFile._size));
 			return group.slice(1).forEachAsync(file => {
-				logger.log('Comparing:  ', file.name, Format.bytes(file._size));
+				if (options.logger) logger.log('Comparing:  ', file.name, Format.bytes(file._size));
 				
 				bestName = options.namePreference(file.name, bestName);
 				
@@ -71,20 +77,22 @@ module.exports = function removeDuplicates(directory, options = {}) {
 					// no change
 				}
 				
-				logger.cyan('Best Size:  ', bestSizeFile.name, Format.bytes(bestSizeFile._size));
-				logger.cyan('Best Name:  ', bestName);
+				if (options.logger) {
+					logger.cyan('Best Size:  ', bestSizeFile.name, Format.bytes(bestSizeFile._size));
+					logger.cyan('Best Name:  ', bestName);
+					logger.green('Removed:    ', file.name);
+				}
 				
 				// remove the inferior file
-				logger.green('Removed:    ', file.name);
 				removed.push(file);
 				file.delete();
 				return imgHashCache.delete(file.name);
 			})
 			.then(() => {
-				logger.green('Retained:   ', bestSizeFile.name);
+				if (options.logger) logger.green('Retained:   ', bestSizeFile.name);
 				retained.push(bestSizeFile);
 				if (bestSizeFile.name != bestName && options.rename) {
-					logger.yellow('Renamed As: ', bestName);
+					if (options.logger) logger.yellow('Renamed As: ', bestName);
 					renamed++;
 					var prevName = bestSizeFile.name;
 					bestName = bestSizeFile.rename(bestName);
@@ -92,7 +100,7 @@ module.exports = function removeDuplicates(directory, options = {}) {
 				}
 			})
 			.then(() => {
-				logger.unindent();
+				if (options.logger) logger.unindent();
 			});
 		})
 		.then(() => {
@@ -100,17 +108,18 @@ module.exports = function removeDuplicates(directory, options = {}) {
 			var timeElapsed = endTime - startTime;
 			var totalBytes = removed.reduce((a,f) => a += f._size, 0);
 			
-			logger.unindent();
-			logger.ln();
-			logger.log(`Finished in ${Format.time(timeElapsed)}.`);
-			logger.log(`${removed.length} files removed, ${renamed} files renamed.`);
-			logger.log(`${Format.bytes(totalBytes)} of disk space freed.`);
-			
-			FileExplorer.goto(directory);
+			if (options.logger) {
+				logger.unindent();
+				logger.ln();
+				logger.log(`Finished in ${Format.time(timeElapsed)}.`);
+				logger.log(`${removed.length} files removed, ${renamed} files renamed.`);
+				logger.log(`${Format.bytes(totalBytes)} of disk space freed.`);
+			}
+			// FileExplorer.goto(directory);
 		});
 	})
 	.then(() => {
 		return {retained, removed};
 	})
-	.catch(e => logger.error(e));
+	.catch(e => options.logger && logger.error(e));
 };

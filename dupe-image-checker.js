@@ -30,23 +30,28 @@ module.exports = function findDuplicates(directory, options = {}) {
 	options.dirname   = directory;
 	
 	// the keys are the filenames and the values are the filepaths
-	logger.log('Reading images from',directory);
+	if (options.logger)
+		logger.log('Reading images from',directory);
 	var filesObj = readAll(options);
 	var images = Object.keys(filesObj).map(name => new File(filesObj[name]));
 	var length = images.length;
 	var duplicates = [];
 	var startTime = Date.now();
 	
-	logger.log(`Caching data for ${length} images...`);
+	if (options.logger)
+		logger.log(`Caching data for ${length} images...`);
 	var imgHashCache = new FileCache(directory, 'imgcache');
 	
-	logger.indent();
+	if (options.logger)
+		logger.indent();
 	
 	/* Step 1. Cache all the image widths x heights, sizes, and perceptual hashes.
 	   Note: Jimp takes a while to load images... */
 	return images.forEachAsync((file, i) => {
-		logger.log(`[${i+1}/${length}]`, file.name);
-		logger.indent();
+		if (options.logger) {
+			logger.log(`[${i+1}/${length}]`, file.name);
+			logger.indent();
+		}
 		if (imgHashCache.has(file.name)) {
 			try {
 				// use the cached data to skip loading the image
@@ -56,13 +61,17 @@ module.exports = function findDuplicates(directory, options = {}) {
 				var hash16 = file._hash;
 				file._hash = hex.hex2bin(file._hash);
 				
-				logger.cyan('Size: ', file.width, 'x', file.height);
-				logger.cyan('Bytes:', Format.bytes(file._size));
-				logger.cyan('Hash: ', hash16);
+				if (options.logger) {
+					logger.cyan('Size: ', file.width, 'x', file.height);
+					logger.cyan('Bytes:', Format.bytes(file._size));
+					logger.cyan('Hash: ', hash16);
+				}
 			} catch (e) {
-				logger.error(e);
+				if (options.logger) {
+					logger.error(e);
+				}
 			} finally {
-				logger.unindent();
+				if (options.logger) logger.unindent();
 				return;
 			}
 		} else {
@@ -78,10 +87,11 @@ module.exports = function findDuplicates(directory, options = {}) {
 				
 				// no longer need this
 				delete image;
-				
-				logger.cyan('Size: ', file.width, 'x', file.height);
-				logger.cyan('Bytes:', Format.bytes(file._size));
-				logger.cyan('Hash: ', hash16);
+				if (options.logger) {
+					logger.cyan('Size: ', file.width, 'x', file.height);
+					logger.cyan('Bytes:', Format.bytes(file._size));
+					logger.cyan('Hash: ', hash16);
+				}
 				
 				// cache the file metadata, but with the hash compressed
 				return imgHashCache.set(file.name, {
@@ -91,33 +101,38 @@ module.exports = function findDuplicates(directory, options = {}) {
 					_hash:  hash16
 				});
 			})
-			.catch(e => logger.error(e))
-			.then(() => logger.unindent())
+			.catch(e => options.logger && logger.error(e))
+			.then(() => options.logger && logger.unindent())
 		}
 	})
 	/* Step 2. Sort images. This is completely useless to do. */
 	.then(() => {
-		logger.unindent();
-		logger.ln();
-		logger.log(`Sorting ${length} images by size...`);
-		
+		if (options.logger) {
+			logger.unindent();
+			logger.ln();
+			logger.log(`Sorting ${length} images by size...`);
+		}
 		images = images.sort((f1, f2) => ((f1._size > f2._size) ? 1 : (f1._size < f2._size) ? -1 : 0));
-		
-		logger.log('Finished sorting.');
+		if (options.logger)
+			logger.log('Finished sorting.');
 	})
 	/* Step 3. Compare pairs of images by ratio and hash, then perform pixel matching if they're alike.
 	   If the pixel match returns a small value, it means the images are identical (or near-identical). */
 	.then(() => {
-		logger.ln();
-		logger.log(`Dupe-checking ${length} images...`);
-		logger.indent();
+		if (options.logger) {
+			logger.ln();
+			logger.log(`Dupe-checking ${length} images...`);
+			logger.indent();
+		}
 		
 		return images.forEachAsync((file1, i) => {
 			if (isDuplicate(file1)) return;
 			
-			logger.log(`[${i+1}/${length}]`, file1.name, `(${Format.bytes(file1._size)})`);
-			logger.indent();
-			logger.cyan('Size:', file1.width, 'x', file1.height);
+			if (options.logger) {
+				logger.log(`[${i+1}/${length}]`, file1.name, `(${Format.bytes(file1._size)})`);
+				logger.indent();
+				logger.cyan('Size:', file1.width, 'x', file1.height);
+			}
 			
 			var image1 = null;
 			return images.forEachAsync((file2, j) => {
@@ -127,8 +142,10 @@ module.exports = function findDuplicates(directory, options = {}) {
 				var dist = distance(file1._hash, file2._hash);
 				if (dist > 2/64) return;
 				
-				logger.log(`[${j+1}/${length}]`, file2.name, `(${Format.bytes(file2._size)})`);
-				logger.indent();
+				if (options.logger) {
+					logger.log(`[${j+1}/${length}]`, file2.name, `(${Format.bytes(file2._size)})`);
+					logger.indent();
+				}
 				
 				if (dist == 0) {
 					//logger.green('Instant Match');
@@ -145,21 +162,21 @@ module.exports = function findDuplicates(directory, options = {}) {
 						var difference = Jimp.diff(image1, image2, options.threshold).percent;
 						
 						if (difference == 0) {
-							logger.green('Match:', Format.percent(1-difference));
+							if (options.logger) logger.green('Match:', Format.percent(1-difference));
 							markAsDuplicates(file1, file2);
 						} else if (difference < options.tolerance) {
-							logger.yellow('Match:', Format.percent(1-difference));
+							if (options.logger) logger.yellow('Match:', Format.percent(1-difference));
 							markAsDuplicates(file1, file2);
 						} else {
-							logger.red('Match:', Format.percent(1-difference));
+							if (options.logger) logger.red('Match:', Format.percent(1-difference));
 						}
 					})
 				})
-				.catch(e => logger.error(e))
-				.then(() => logger.unindent())
+				.catch(e => options.logger && logger.error(e))
+				.then(() => options.logger && logger.unindent())
 			}, i + 1, length)
-			.catch(e => logger.error(e))
-			.then(() => logger.unindent())
+			.catch(e => options.logger && logger.error(e))
+			.then(() => options.logger && logger.unindent())
 		}, 0, length - 1)
 	})
 	.then(() => {
@@ -168,10 +185,12 @@ module.exports = function findDuplicates(directory, options = {}) {
 		
 		delete imgHashCache;
 		
-		logger.unindent();
-		logger.ln();
-		logger.log(`Finished in ${Format.time(timeElapsed)}.`);
-		logger.log(`${duplicates.length} duplicate groups found containing ${duplicates.reduce((a,x) => a.concat(x),[]).length} images.`);
+		if (options.logger) {
+			logger.unindent();
+			logger.ln();
+			logger.log(`Finished in ${Format.time(timeElapsed)}.`);
+			logger.log(`${duplicates.length} duplicate groups found containing ${duplicates.reduce((a,x) => a.concat(x),[]).length} images.`);
+		}
 		
 		// a jagged array of File objects
 		return duplicates;
